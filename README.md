@@ -24,9 +24,11 @@ Many of these adapters ship with an internal flash storage volume (~8 MB) contai
 
 ## Features
 
-- **Modern Kernel Compatibility**: Fixes DRM atomic helper signatures (`struct drm_atomic_state`) for smooth compilation on Linux kernels 6.x and 7.x.
-- **DKMS Support**: Automatically rebuilds and installs the driver whenever the system updates to a new Linux kernel.
-- **Automated Setup Script**: One-command compilation, DKMS registration, and module activation.
+- **Modern Kernel Compatibility**: Fixes DRM atomic helper signatures (`struct drm_atomic_state`) for Linux kernels 6.x and 7.x.
+- **No desktop stalls** (upstream [PR #45](https://github.com/rhgndf/ms912x/pull/45)): shadow copy of the screen, only changed pixels are sent, USB runs in its own worker. Xorg commits never wait on USB and no damage is dropped.
+- **Non-blocking hotplug** ([PR #46](https://github.com/rhgndf/ms912x/pull/46)): the driver polls HPD itself and prefetches the EDID in the background, four bytes per request, with a cache.
+- **Fast reverse PRIME reads**: framebuffers imported from another GPU (write-combined memory) are read with `drm_memcpy_from_wc()`. On an AMD Cezanne each update went from ~30 ms to ~1 ms.
+- **DKMS Support**: rebuilt automatically for new kernels, with the same compiler the kernel was built with.
 
 ---
 
@@ -56,14 +58,32 @@ sudo pacman -S --needed base-devel linux-headers dkms
 ### 2. Clone & Install
 
 ```bash
-git clone https://github.com/rhgndf/ms912x.git
-cd ms912x
+git clone https://github.com/Davicjc/MacroSilicon-USBDisplay_Adapters-MS912.git
+cd MacroSilicon-USBDisplay_Adapters-MS912
 sudo bash install.sh
 ```
 
 *(If you prefer Portuguese terminal output, you can run `sudo bash instalar.sh` instead).*
 
-The script will build the kernel module, register it with DKMS, and immediately load `ms912x`. Your external monitor should turn on right away.
+The script removes old versions, installs through DKMS and loads the driver.
+
+### 3. X11 with an AMD GPU (amdgpu): turn TearFree off
+
+On X11, the `amdgpu` driver enables TearFree automatically ("auto") for secondary outputs such as this adapter, and copies the whole screen every frame even when nothing changes. On the AMD's own outputs "auto" already means off, so this only affects the USB monitor:
+
+```bash
+sudo install -m 644 xorg/20-amdgpu-tearfree.conf /etc/X11/xorg.conf.d/
+```
+
+Then log out and back in. Not needed on Wayland or with Intel/NVIDIA GPUs.
+
+---
+
+## Known limitations
+
+- **USB 2.0 (`534d:6021`)**: about 31 MB/s. Text, windows and the cursor are smooth because only changed areas are sent. Full-screen changes (full-screen 1920×1080 video) run at ~7 fps.
+- **VGA adapters without EDID**: if the monitor or cable does not provide an EDID, the driver offers the standard modes (up to 1920×1200) and the desktop starts at 1024×768. Pick the right resolution once in the display settings.
+- **Driver "CD"**: on the first command from a driver, the adapter hides its storage partition and re-enumerates on USB. This is factory behaviour.
 
 ---
 
@@ -72,9 +92,8 @@ The script will build the kernel module, register it with DKMS, and immediately 
 To remove the driver from your system:
 
 ```bash
-sudo dkms remove -m ms912x -v 0.1 --all
-sudo rm -f /lib/modules/$(uname -r)/updates/ms912x.ko
-sudo depmod -a
+sudo bash uninstall.sh
+sudo rm -f /etc/X11/xorg.conf.d/20-amdgpu-tearfree.conf   # if installed
 ```
 
 ---
