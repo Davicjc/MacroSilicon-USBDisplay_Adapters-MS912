@@ -144,7 +144,7 @@ ms912x_get_mode(struct ms912x_device *ms912x,
 }
 
 static void ms912x_crtc_atomic_enable(struct drm_crtc *crtc,
-				      struct drm_atomic_state *state)
+				      struct ms912x_atomic_state *state)
 {
 	struct drm_crtc_state *crtc_state =
 		drm_atomic_get_new_crtc_state(state, crtc);
@@ -171,7 +171,7 @@ static void ms912x_crtc_atomic_enable(struct drm_crtc *crtc,
 }
 
 static void ms912x_crtc_atomic_disable(struct drm_crtc *crtc,
-				       struct drm_atomic_state *state)
+				       struct ms912x_atomic_state *state)
 {
 	struct drm_device *dev = crtc->dev;
 	struct ms912x_device *ms912x = to_ms912x(dev);
@@ -197,7 +197,7 @@ ms912x_crtc_mode_valid(struct drm_crtc *crtc,
 }
 
 static int ms912x_plane_atomic_check(struct drm_plane *plane,
-				     struct drm_atomic_state *state)
+				     struct ms912x_atomic_state *state)
 {
 	struct drm_plane_state *old_plane_state;
 	struct drm_plane_state *new_plane_state;
@@ -224,7 +224,7 @@ static int ms912x_plane_atomic_check(struct drm_plane *plane,
 }
 
 static void ms912x_plane_atomic_update(struct drm_plane *plane,
-				       struct drm_atomic_state *state)
+				       struct ms912x_atomic_state *state)
 {
 	struct drm_plane_state *old_plane_state;
 	struct drm_plane_state *new_plane_state;

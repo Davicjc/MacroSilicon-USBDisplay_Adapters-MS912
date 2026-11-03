@@ -10,6 +10,7 @@
 #include <linux/timer_types.h>
 #include <linux/types.h>
 #include <linux/usb.h>
+#include <linux/version.h>
 #include <linux/workqueue.h>
 
 #include <drm/drm_connector.h>
@@ -23,6 +24,17 @@
 #include <drm/drm_rect.h>
 
 struct drm_edid;
+
+/*
+ * Linux 7.2 renamed struct drm_atomic_state to struct drm_atomic_commit in
+ * the CRTC/plane helper callbacks. Pick the right one so the same source
+ * builds (e.g. through DKMS) on both sides of the change.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
+#define ms912x_atomic_state drm_atomic_commit
+#else
+#define ms912x_atomic_state drm_atomic_state
+#endif
 
 #define DRIVER_NAME "ms912x"
 #define DRIVER_DESC "MacroSilicon USB to VGA/HDMI"
