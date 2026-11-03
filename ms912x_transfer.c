@@ -19,6 +19,7 @@
 #include <linux/vmalloc.h>
 #include <linux/workqueue.h>
 
+#include <drm/drm_cache.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_format_helper.h>
 #include <drm/drm_framebuffer.h>
@@ -269,6 +270,25 @@ static void ms912x_xrgb_to_yuv422_line(u8 *transfer_buffer,
  * Clients often report the whole window as damaged for a few changed pixels,
  * and every byte counts on USB 2.
  */
+/*
+ * Framebuffers imported from another GPU (reverse PRIME) are usually mapped
+ * write-combined, where plain CPU loads are very slow. drm_memcpy_from_wc()
+ * uses streaming loads for the 16 byte aligned part; copy the tail normally.
+ */
+static void ms912x_copy_line_from_fb(void *dst, const struct iosys_map *row,
+				     size_t offset, size_t len)
+{
+	struct iosys_map dst_map = IOSYS_MAP_INIT_VADDR(dst);
+	struct iosys_map src_map = IOSYS_MAP_INIT_OFFSET(row, offset);
+	size_t fast = round_down(len, MS912X_WC_COPY_ALIGN);
+
+	if (fast)
+		drm_memcpy_from_wc(&dst_map, &src_map, fast);
+	if (len > fast)
+		iosys_map_memcpy_from(dst + fast, row, offset + fast,
+				      len - fast);
+}
+
 int ms912x_fb_send_rect(struct drm_framebuffer *fb, const struct iosys_map *map,
 			struct drm_format_conv_state *fmtcnv_state,
 			struct drm_rect *rect)
@@ -280,6 +300,12 @@ int ms912x_fb_send_rect(struct drm_framebuffer *fb, const struct iosys_map *map,
 	__le32 *line, *old;
 	int ret, y, l, r, width;
 
+	/*
+	 * Start on a 16 byte boundary so drm_memcpy_from_wc() can use its
+	 * streaming load path. Extra pixels are filtered out by the shadow
+	 * comparison below.
+	 */
+	rect->x1 = ALIGN_DOWN(rect->x1, MS912X_WC_COPY_ALIGN / 4);
 	rect->x2 = min_t(int, rect->x2, fb->width);
 	rect->y2 = min_t(int, rect->y2, fb->height);
 	width = drm_rect_width(rect);
@@ -299,7 +325,8 @@ int ms912x_fb_send_rect(struct drm_framebuffer *fb, const struct iosys_map *map,
 	mutex_lock(&ms912x->shadow_lock);
 	fb_map = IOSYS_MAP_INIT_OFFSET(map, rect->y1 * fb->pitches[0]);
 	for (y = rect->y1; y < rect->y2; y++) {
-		iosys_map_memcpy_from(line, &fb_map, rect->x1 * 4, width * 4);
+		ms912x_copy_line_from_fb(line, &fb_map, rect->x1 * 4,
+					 width * 4);
 		iosys_map_incr(&fb_map, fb->pitches[0]);
 		old = ms912x->shadow + y * MS912X_SHADOW_PITCH + rect->x1 * 4;
 

@@ -216,6 +216,9 @@ struct ms912x_custom_timing_record {
 #define MS912X_MAX_TRANSFER_LEN \
 	(MS912X_MAX_WIDTH * MS912X_MAX_HEIGHT * 2 + MS912X_FRAME_OVERHEAD)
 
+/* drm_memcpy_from_wc() streaming loads need 16 byte alignment */
+#define MS912X_WC_COPY_ALIGN 16
+
 #define MS912X_SHADOW_PITCH (MS912X_MAX_WIDTH * 4)
 #define MS912X_SHADOW_SIZE (MS912X_SHADOW_PITCH * MS912X_MAX_HEIGHT)
 
