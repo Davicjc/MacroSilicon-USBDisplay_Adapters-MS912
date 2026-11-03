@@ -27,7 +27,8 @@ Esses adaptadores costumam vir de fábrica com uma pequena partição de armazen
 - **Compatibilidade com Kernel 6.x e 7.x**: correções nas assinaturas de callbacks DRM (`drm_atomic_state` nos helpers de CRTC e Plane).
 - **Sem travar o desktop** ([PR #45](https://github.com/rhgndf/ms912x/pull/45) do upstream): cópia da tela (shadow), envio só do que mudou e USB num worker próprio. O commit do Xorg nunca espera a USB e nenhuma área alterada é descartada.
 - **Detecção sem congelar** ([PR #46](https://github.com/rhgndf/ms912x/pull/46)): o próprio driver acompanha a conexão do monitor e lê o EDID em segundo plano, 4 bytes por requisição, com cache.
-- **Leitura rápida em reverse PRIME**: o framebuffer vindo de outra GPU (memória write-combined) é lido com `drm_memcpy_from_wc()`. Numa AMD Cezanne, cada atualização caiu de ~30 ms para ~1 ms.
+- **Leitura rápida em reverse PRIME**: o framebuffer vindo de outra GPU (memória write-combined) é lido com `drm_memcpy_from_wc()`. Numa AMD Cezanne, cada atualização caiu de ~30 ms para ~1 ms, e o Xorg parado de ~80% para ~15% de CPU.
+- **Reconexão estável**: a troca de resolução (vários comandos USB) não é mais interrompida pelas leituras de HPD/EDID, e o driver espera o chip detectar o monitor antes de ler o tipo de porta (logo após ligar ele informa HDMI num adaptador VGA, e o desktop achava que era outro monitor). Probe assíncrono, para essa espera não segurar a USB.
 - **Instalação com DKMS**: recompila sozinho a cada kernel novo, com o mesmo compilador usado no kernel.
 
 ---
@@ -67,22 +68,13 @@ sudo bash instalar.sh
 
 O script remove versões antigas, instala pelo DKMS e carrega o driver.
 
-### 3. X11 com placa AMD (amdgpu): desligar o TearFree
-
-No X11, o driver `amdgpu` liga o TearFree sozinho ("auto") em saídas secundárias, como este adaptador, e recopia a tela inteira a cada quadro, mesmo com nada mudando. Nas saídas da própria AMD, o "auto" já equivale a desligado. Por isso a configuração abaixo só muda o monitor USB:
-
-```bash
-sudo install -m 644 xorg/20-amdgpu-tearfree.conf /etc/X11/xorg.conf.d/
-```
-
-Depois faça logout e login. No Wayland, ou com placas Intel/NVIDIA, este passo não se aplica.
-
 ---
 
 ## Limitações conhecidas
 
 - **USB 2.0 (`534d:6021`)**: cerca de 31 MB/s. Texto, janelas e mouse ficam lisos, porque só a área alterada é enviada. A tela inteira mudando (vídeo em tela cheia a 1920×1080) fica em ~7 quadros por segundo.
 - **Adaptador VGA sem EDID**: se o monitor ou o cabo não entregam o EDID, o driver oferece os modos padrão (até 1920×1200) e o desktop começa em 1024×768. Escolha a resolução certa uma vez nas configurações de tela.
+- **X11 com amdgpu: não desligue o TearFree.** Com `Option "TearFree" "off"` o monitor USB volta com a parte de cima preta quando é reconectado com a sessão aberta. Deixe o padrão ("auto").
 - **"CD" de instalação**: ao receber o primeiro comando de um driver, o adaptador esconde a partição de armazenamento e reconecta sozinho na USB. Isso é comportamento de fábrica.
 
 ---
@@ -93,7 +85,6 @@ Caso queira remover o driver do sistema:
 
 ```bash
 sudo bash desinstalar.sh
-sudo rm -f /etc/X11/xorg.conf.d/20-amdgpu-tearfree.conf   # se tiver instalado
 ```
 
 ---
