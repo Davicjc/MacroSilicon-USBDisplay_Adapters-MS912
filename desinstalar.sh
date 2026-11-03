@@ -16,7 +16,7 @@ for versao in $(dkms status "$NOME" 2>/dev/null | sed -n "s|^$NOME/\([^,:]*\).*|
     rm -rf "/usr/src/$NOME-$versao"
 done
 
-if lsmod | grep -q "^$NOME "; then
+if [ -d "/sys/module/$NOME" ]; then
     echo "O módulo continua carregado até o próximo boot (ou: sudo modprobe -r $NOME)."
 fi
 echo "Pronto."

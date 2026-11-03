@@ -30,7 +30,7 @@ for old in $(dkms status "$NAME" 2>/dev/null | sed -n "s|^$NAME/\([^,:]*\).*|\1|
     dkms remove "$NAME/$old" --all
 done
 # Manual copy left by the old script (not tracked by DKMS)
-if [ -f "/lib/modules/$KVER/updates/$NAME.ko" ] && ! dkms status "$NAME" | grep -q installed; then
+if [ -f "/lib/modules/$KVER/updates/$NAME.ko" ] && [[ "$(dkms status "$NAME" 2>/dev/null)" != *installed* ]]; then
     rm -f "/lib/modules/$KVER/updates/$NAME.ko"
 fi
 
@@ -45,7 +45,7 @@ dkms build "$NAME/$VERSION" -k "$KVER"
 dkms install "$NAME/$VERSION" -k "$KVER"
 
 echo "==> [4/4] Loading the driver..."
-if lsmod | grep -q "^$NAME "; then
+if [ -d "/sys/module/$NAME" ]; then
     echo "$NAME is already loaded. The installed version is used from the next boot"
     echo "(or replug the USB adapter after: sudo modprobe -r $NAME)."
 else

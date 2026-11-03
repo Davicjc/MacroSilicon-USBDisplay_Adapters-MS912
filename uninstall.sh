@@ -16,7 +16,7 @@ for version in $(dkms status "$NAME" 2>/dev/null | sed -n "s|^$NAME/\([^,:]*\).*
     rm -rf "/usr/src/$NAME-$version"
 done
 
-if lsmod | grep -q "^$NAME "; then
+if [ -d "/sys/module/$NAME" ]; then
     echo "The module stays loaded until the next boot (or: sudo modprobe -r $NAME)."
 fi
 echo "Done."
