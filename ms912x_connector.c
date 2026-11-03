@@ -99,7 +99,12 @@ static int ms912x_read_edid(void *data, u8 *buf, unsigned int block, size_t len)
 
 static int ms912x_read_hpd_status(struct ms912x_device *ms912x)
 {
-	int ret = ms912x_read_byte(ms912x, MS912X_REG_DISPLAY_STATUS);
+	int ret;
+
+	/* Never between the steps of a mode set sequence */
+	mutex_lock(&ms912x->seq_lock);
+	ret = ms912x_read_byte(ms912x, MS912X_REG_DISPLAY_STATUS);
+	mutex_unlock(&ms912x->seq_lock);
 
 	if (ret < 0)
 		return ret;
@@ -171,8 +176,10 @@ void ms912x_hpd_work(struct work_struct *work)
 		int retry;
 
 		for (retry = 0; retry < MS912X_EDID_RETRIES; retry++) {
+			mutex_lock(&ms912x->seq_lock);
 			edid = drm_edid_read_custom(connector, ms912x_read_edid,
 						    ms912x);
+			mutex_unlock(&ms912x->seq_lock);
 			if (edid)
 				break;
 			if (retry + 1 < MS912X_EDID_RETRIES)
@@ -412,12 +419,45 @@ static const struct drm_connector_funcs ms912x_connector_funcs = {
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 };
 
+#define MS912X_PORT_SETTLE_TIMEOUT_MS	5000
+#define MS912X_PORT_SETTLE_POLL_MS	100
+
+/*
+ * Right after power-up the chip reports the chip default (HDMI) as its
+ * video port type until it has detected the monitor, which can take a few
+ * seconds. Reading it too early registers a VGA adapter as HDMI, and the
+ * changed connector name makes the desktop treat it as a new monitor.
+ * Wait (bounded) for HPD before reading it. Probe is asynchronous, so this
+ * does not hold up the rest of USB enumeration.
+ */
+static void ms912x_wait_port_settle(struct ms912x_device *ms912x)
+{
+	unsigned long deadline =
+		jiffies + msecs_to_jiffies(MS912X_PORT_SETTLE_TIMEOUT_MS);
+	int status;
+
+	do {
+		status = ms912x_read_byte(ms912x, MS912X_REG_DISPLAY_STATUS);
+		if (status < 0)
+			return;
+		if (status == 1) {
+			msleep(MS912X_HPD_SETTLE_MS);
+			return;
+		}
+		msleep(MS912X_PORT_SETTLE_POLL_MS);
+	} while (time_before(jiffies, deadline));
+
+	drm_info(&ms912x->drm,
+		 "no monitor detected yet, video port type may be the chip default\n");
+}
+
 int ms912x_connector_init(struct ms912x_device *ms912x)
 {
 	int ret;
 	int connector_type;
 	int encoder_type;
 
+	ms912x_wait_port_settle(ms912x);
 	connector_type = ms912x_get_connector_type(ms912x);
 	encoder_type = ms912x_get_encoder_type(ms912x->port_type);
 

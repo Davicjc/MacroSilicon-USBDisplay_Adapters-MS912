@@ -136,6 +136,13 @@ struct ms912x_device {
 	struct workqueue_struct *workqueue;
 	/* Serializes HID control request/response sequences */
 	struct mutex ctrl_lock;
+	/*
+	 * Keeps multi-request register sequences (power + mode set, taken
+	 * from Windows captures) atomic with respect to the HPD worker's
+	 * status/EDID reads. Interleaving them on hotplug left the device
+	 * scanning out a half black, corrupted frame. Taken before ctrl_lock.
+	 */
+	struct mutex seq_lock;
 
 	struct drm_connector connector;
 	struct drm_encoder encoder;

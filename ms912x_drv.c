@@ -153,21 +153,24 @@ static void ms912x_crtc_atomic_enable(struct drm_crtc *crtc,
 	const struct ms912x_mode *ms_mode;
 	int ret;
 
-	ret = ms912x_power_on(ms912x);
-	if (ret) {
-		drm_err(dev, "failed to power on display: %d\n", ret);
-		return;
-	}
-
 	ms_mode = ms912x_get_mode(ms912x, &crtc_state->mode);
 	if (!ms_mode) {
 		drm_err(dev, "unsupported mode passed to CRTC enable\n");
 		return;
 	}
 
+	mutex_lock(&ms912x->seq_lock);
+	ret = ms912x_power_on(ms912x);
+	if (ret) {
+		drm_err(dev, "failed to power on display: %d\n", ret);
+		goto unlock;
+	}
+
 	ret = ms912x_set_resolution(ms912x, ms_mode);
 	if (ret)
 		drm_err(dev, "failed to set display mode: %d\n", ret);
+unlock:
+	mutex_unlock(&ms912x->seq_lock);
 }
 
 static void ms912x_crtc_atomic_disable(struct drm_crtc *crtc,
@@ -178,7 +181,9 @@ static void ms912x_crtc_atomic_disable(struct drm_crtc *crtc,
 	int ret;
 
 	cancel_work_sync(&ms912x->request.work);
+	mutex_lock(&ms912x->seq_lock);
 	ret = ms912x_power_off(ms912x);
+	mutex_unlock(&ms912x->seq_lock);
 	if (ret && ret != -ENODEV)
 		drm_err(dev, "failed to power off display: %d\n", ret);
 }
@@ -318,6 +323,10 @@ static int ms912x_usb_probe(struct usb_interface *interface,
 	if (ret)
 		return ret;
 
+	ret = devm_mutex_init(&interface->dev, &ms912x->seq_lock);
+	if (ret)
+		return ret;
+
 	ret = devm_mutex_init(&interface->dev, &ms912x->hpd_lock);
 	if (ret)
 		return ret;
@@ -374,7 +383,9 @@ static int ms912x_usb_probe(struct usb_interface *interface,
 	dev->mode_config.helper_private = &ms912x_mode_config_helper_funcs;
 
 	/* This stops weird behavior in the device */
+	mutex_lock(&ms912x->seq_lock);
 	ret = ms912x_set_resolution(ms912x, &ms912x_mode_list[0]);
+	mutex_unlock(&ms912x->seq_lock);
 	if (ret)
 		return ret;
 
@@ -481,6 +492,10 @@ static struct usb_driver ms912x_driver = {
 	.reset_resume = ms912x_usb_resume,
 	.shutdown = ms912x_usb_shutdown,
 	.id_table = id_table,
+	/* Probe waits for the chip to detect the monitor (see connector.c) */
+	.driver = {
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
+	},
 };
 module_usb_driver(ms912x_driver);
 MODULE_DESCRIPTION(DRIVER_DESC);
