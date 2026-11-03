@@ -1,40 +1,57 @@
 #!/usr/bin/env bash
-# Script de instalação do driver ms912x com suporte a DKMS
-set -e
+# Instala o driver ms912x pelo DKMS (recompila sozinho a cada kernel novo).
+# Uso: sudo bash instalar.sh
+set -euo pipefail
 
 if [ "$EUID" -ne 0 ]; then
-    echo "Erro: execute este script com permissões de administrador."
-    echo "Uso: sudo bash $0"
+    echo "Erro: execute como administrador: sudo bash $0" >&2
     exit 1
 fi
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NOME="ms912x"
+VERSAO="$(sed -n 's/^PACKAGE_VERSION="\(.*\)"/\1/p' "$DIR/dkms.conf")"
 KVER="$(uname -r)"
+SRC="/usr/src/$NOME-$VERSAO"
 
-echo "==> [1/4] Compilando módulo para o kernel atual ($KVER)..."
-make -C "$DIR" clean
-make -C "$DIR" all -j"$(nproc)"
+for cmd in dkms make; do
+    command -v "$cmd" >/dev/null || {
+        echo "Erro: '$cmd' não encontrado. Instale: sudo apt install dkms build-essential" >&2
+        exit 1
+    }
+done
+if [ ! -d "/lib/modules/$KVER/build" ]; then
+    echo "Erro: headers do kernel $KVER ausentes. Instale: sudo apt install linux-headers-$KVER" >&2
+    exit 1
+fi
 
-echo "==> [2/4] Copiando módulo e atualizando dependências..."
-mkdir -p "/lib/modules/$KVER/updates"
-cp "$DIR/ms912x.ko" "/lib/modules/$KVER/updates/"
-depmod -a "$KVER"
+echo "==> [1/4] Removendo versões antigas do $NOME..."
+for antiga in $(dkms status "$NOME" 2>/dev/null | sed -n "s|^$NOME/\([^,:]*\).*|\1|p" | sort -u); do
+    dkms remove "$NOME/$antiga" --all
+done
+# Cópia manual deixada pelo script antigo (fora do controle do DKMS)
+if [ -f "/lib/modules/$KVER/updates/$NOME.ko" ] && ! dkms status "$NOME" | grep -q installed; then
+    rm -f "/lib/modules/$KVER/updates/$NOME.ko"
+fi
 
-echo "==> [3/4] Registrando no DKMS (recompilação automática em updates de kernel)..."
-mkdir -p /usr/src/ms912x-0.1
-cp -r "$DIR"/* /usr/src/ms912x-0.1/
-make -C /usr/src/ms912x-0.1 clean 2>/dev/null || true
-rm -f /usr/src/ms912x-0.1/*.o /usr/src/ms912x-0.1/*.ko /usr/src/ms912x-0.1/.*.cmd /usr/src/ms912x-0.1/*.mod*
+echo "==> [2/4] Copiando o código-fonte para $SRC..."
+rm -rf "$SRC"
+install -d "$SRC"
+install -m 644 "$DIR"/*.c "$DIR"/*.h "$DIR/Makefile" "$DIR/dkms.conf" "$DIR/LICENSE" "$SRC/"
 
-dkms remove -m ms912x -v 0.1 --all 2>/dev/null || true
-dkms add -m ms912x -v 0.1
-dkms build -m ms912x -v 0.1
-dkms install -m ms912x -v 0.1 --force
+echo "==> [3/4] Compilando e instalando pelo DKMS (kernel $KVER)..."
+dkms add "$NOME/$VERSAO"
+dkms build "$NOME/$VERSAO" -k "$KVER"
+dkms install "$NOME/$VERSAO" -k "$KVER"
 
-echo "==> [4/4] Carregando o driver ms912x..."
-modprobe drm_shmem_helper 2>/dev/null || true
-modprobe ms912x
+echo "==> [4/4] Carregando o driver..."
+if lsmod | grep -q "^$NOME "; then
+    echo "O $NOME já está carregado. A versão instalada vale a partir do próximo boot"
+    echo "(ou tire e recoloque o adaptador USB depois de: sudo modprobe -r $NOME)."
+else
+    modprobe "$NOME"
+fi
 
-echo ""
-echo "Driver instalado e carregado com sucesso!"
-lsmod | grep ms912x
+echo
+dkms status "$NOME"
+echo "Pronto."
