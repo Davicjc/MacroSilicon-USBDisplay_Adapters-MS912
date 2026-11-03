@@ -1,5 +1,7 @@
 # Driver Linux para adaptadores de vídeo USB MacroSilicon (MS912x)
 
+**Português** | **[Read in English](README.en.md)**
+
 Driver de kernel (DRM/KMS) para adaptadores USB → VGA/HDMI com chip **MacroSilicon MS912x**,
 instalado pelo **DKMS** (recompila sozinho quando o kernel atualiza).
 
